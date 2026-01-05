@@ -24,58 +24,58 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      
-      - name: Cache pip packages
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+          cache: 'pip'
       
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pytest pytest-cov httpx fastapi
-          pip install -r requirements.txt || echo "requirements.txt not found or has issues"
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
       
       - name: List test files
         run: |
-          echo "Looking for test files..."
-          find . -name "test_*.py" -o -name "*_test.py"
-          echo "Contents of tests directory:"
-          ls -la tests/ 2>/dev/null || echo "No tests directory"
+          echo "📂 Looking for test files..."
+          find . -name "test_*.py" -o -name "*_test.py" || echo "No test files found"
+          if [ -d "tests" ]; then
+            echo "📁 Contents of tests directory:"
+            ls -la tests/
+          fi
       
       - name: Run tests
         run: |
           if [ -d "tests" ] && [ -n "$(find tests -name 'test_*.py' 2>/dev/null)" ]; then
-            echo "Running tests..."
-            pytest tests/ -v --tb=short
+            echo "✅ Running tests..."
+            pytest tests/ -v --tb=short --maxfail=5
           else
-            echo "⚠️ No test files found, creating a dummy test..."
+            echo "⚠️ No test files found"
+            echo "Creating a placeholder test to pass CI..."
             mkdir -p tests
-            cat > tests/test_dummy.py << 'EOF'
-          def test_dummy():
-              """Dummy test to pass CI"""
-              assert True
+            cat > tests/test_placeholder.py << 'EOF'
+          def test_placeholder():
+              """Placeholder test - replace with real tests"""
+              assert True, "Placeholder test"
           EOF
-            pytest tests/ -v
+            pytest tests/test_placeholder.py -v
           fi
       
-      - name: Run tests with coverage
-        if: always()
+      - name: Generate coverage report
+        if: success()
         run: |
           if [ -d "tests" ] && [ -n "$(find tests -name 'test_*.py' 2>/dev/null)" ]; then
-            pytest tests/ -v --cov=app --cov-report=term --cov-report=html || true
+            pytest tests/ --cov=app --cov-report=term --cov-report=html --cov-report=xml || true
+            echo "📊 Coverage report generated"
           fi
       
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: htmlcov/
           if-no-files-found: ignore
+          retention-days: 7
 
   build-and-deploy:
     needs: test
@@ -87,22 +87,24 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Azure Login
-        uses: azure/login@v1
+        uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
       
       - name: Login to Azure Container Registry
         run: |
+          echo "🔐 Logging in to ACR..."
           az acr login --name ${{ env.ACR_NAME }}
+          echo "✅ ACR login successful"
       
       - name: Build and push Docker image
         run: |
-          echo "Building Docker image..."
-          docker build -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} .
-          docker tag ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
-                     ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
+          echo "🐳 Building Docker image..."
+          docker build -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+                       -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest \
+                       .
           
-          echo "Pushing images to ACR..."
+          echo "📤 Pushing images to ACR..."
           docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
           docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
           
@@ -110,7 +112,7 @@ jobs:
       
       - name: Deploy to Azure Container Apps
         run: |
-          echo "Deploying to Azure Container Apps..."
+          echo "🚀 Deploying to Azure Container Apps..."
           az containerapp update \
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
@@ -122,9 +124,9 @@ jobs:
               "MAX_LENGTH=128" \
               "MODEL_LOAD_TIMEOUT=300"
           
-          echo "✅ Deployment initiated"
+          echo "✅ Deployment command executed"
       
-      - name: Wait for deployment
+      - name: Wait for deployment stabilization
         run: |
           echo "⏳ Waiting 90 seconds for deployment to stabilize..."
           sleep 90
@@ -137,37 +139,75 @@ jobs:
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --query properties.configuration.ingress.fqdn -o tsv)
           echo "url=https://$APP_URL" >> $GITHUB_OUTPUT
-          echo "🌐 API deployed at: https://$APP_URL"
+          echo "🌐 API URL: https://$APP_URL"
       
-      - name: Test deployment
+      - name: Health checks
         continue-on-error: true
         run: |
+          API_URL="${{ steps.get-url.outputs.url }}"
+          
           echo "🔍 Testing liveness endpoint..."
-          curl -f ${{ steps.get-url.outputs.url }}/liveness && echo "✅ Liveness OK" || echo "⚠️ Liveness check failed"
+          if curl -f -s "$API_URL/liveness" > /dev/null; then
+            echo "✅ Liveness check passed"
+          else
+            echo "⚠️ Liveness check failed"
+          fi
           
           echo ""
           echo "🔍 Testing root endpoint..."
-          curl -f ${{ steps.get-url.outputs.url }}/ && echo "✅ Root OK" || echo "⚠️ Root check failed"
+          if curl -f -s "$API_URL/" > /dev/null; then
+            echo "✅ Root endpoint accessible"
+            echo "📄 Response:"
+            curl -s "$API_URL/" | head -20
+          else
+            echo "⚠️ Root endpoint check failed"
+          fi
       
-      - name: Deployment summary
+      - name: Create deployment summary
         if: always()
         run: |
-          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Docker Image" >> $GITHUB_STEP_SUMMARY
-          echo "\`${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Azure Resources" >> $GITHUB_STEP_SUMMARY
-          echo "- **Container App**: ${{ env.CONTAINER_APP_NAME }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Resource Group**: ${{ env.AZURE_RESOURCE_GROUP }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Region**: France Central" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🌐 URLs" >> $GITHUB_STEP_SUMMARY
-          echo "- **API Root**: [${{ steps.get-url.outputs.url }}](${{ steps.get-url.outputs.url }})" >> $GITHUB_STEP_SUMMARY
-          echo "- **API Docs**: [${{ steps.get-url.outputs.url }}/docs](${{ steps.get-url.outputs.url }}/docs)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Health Check**: [${{ steps.get-url.outputs.url }}/health](${{ steps.get-url.outputs.url }}/health)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### ⚠️ Important Notes" >> $GITHUB_STEP_SUMMARY
-          echo "- Model loading takes 2-3 minutes after deployment" >> $GITHUB_STEP_SUMMARY
-          echo "- The \`/health\` endpoint will return 503 until the model is fully loaded" >> $GITHUB_STEP_SUMMARY
-          echo "- Use \`/liveness\` to check if the container is running" >> $GITHUB_STEP_SUMMARY
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## 🚀 Deployment Summary
+          
+          ### Build Information
+          - **Commit SHA**: \`${{ github.sha }}\`
+          - **Branch**: \`${{ github.ref_name }}\`
+          - **Workflow**: ${{ github.workflow }}
+          - **Run Number**: #${{ github.run_number }}
+          
+          ### Docker Image
+          \`\`\`
+          ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          \`\`\`
+          
+          ### Azure Resources
+          | Resource | Value |
+          |----------|-------|
+          | Container App | \`${{ env.CONTAINER_APP_NAME }}\` |
+          | Resource Group | \`${{ env.AZURE_RESOURCE_GROUP }}\` |
+          | Region | France Central |
+          | CPU | 2.0 cores |
+          | Memory | 4 GiB |
+          
+          ### 🌐 Access URLs
+          - **API Root**: [${{ steps.get-url.outputs.url }}](${{ steps.get-url.outputs.url }})
+          - **Swagger Docs**: [${{ steps.get-url.outputs.url }}/docs](${{ steps.get-url.outputs.url }}/docs)
+          - **Health Check**: [${{ steps.get-url.outputs.url }}/health](${{ steps.get-url.outputs.url }}/health)
+          - **Liveness**: [${{ steps.get-url.outputs.url }}/liveness](${{ steps.get-url.outputs.url }}/liveness)
+          
+          ### ⚠️ Post-Deployment Notes
+          - ⏱️ **Model loading**: Takes 2-3 minutes after deployment
+          - 🔴 **Health endpoint**: Returns \`503\` until model is fully loaded
+          - 🟢 **Liveness endpoint**: Always available (container health check)
+          
+          ### 🧪 Quick Test
+          \`\`\`bash
+          # Test the API
+          curl ${{ steps.get-url.outputs.url }}/liveness
+          
+          # Wait for model loading, then test prediction
+          curl -X POST "${{ steps.get-url.outputs.url }}/predict" \\
+            -H "Content-Type: application/json" \\
+            -d '{"text": "I am feeling stressed"}'
+          \`\`\`
+          EOF

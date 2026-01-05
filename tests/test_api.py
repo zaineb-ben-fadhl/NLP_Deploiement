@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 try:
     from app.main import app
 except ImportError:
-    # Si l'import échoue, créer une app minimale pour les tests
+   
     from fastapi import FastAPI
     app = FastAPI()
     
