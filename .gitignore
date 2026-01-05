@@ -1,0 +1,272 @@
+# ============================================================
+# MODÈLES ML - FICHIERS VOLUMINEUX
+# ============================================================
+artifacts/models/
+artifacts/metrics/
+artifacts/plots/
+artifacts/reports/
+
+# Fichiers de modèles
+*.bin
+*.safetensors
+*.h5
+*.pt
+*.pth
+*.onnx
+*.pb
+*.model
+*.pkl
+*.pickle
+spm.model
+training_args.bin
+
+# Tokenizers
+added_tokens.json
+vocab.txt
+merges.txt
+
+# ============================================================
+# DONNÉES
+# ============================================================
+data/
+datasets/
+*.csv
+*.tsv
+*.arrow
+*.parquet
+*.feather
+*.hdf5
+*.h5
+*.json.gz
+
+# Exceptions (garder les fichiers de configuration)
+!data/.gitkeep
+!data/README.md
+
+# ============================================================
+# LOGS ET MÉTRIQUES
+# ============================================================
+logs/
+*.log
+resultat.txt
+mlruns/
+mlartifacts/
+runs/
+wandb/
+tensorboard/
+.neptune/
+
+# ============================================================
+# PYTHON
+# ============================================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+venv.bak/
+env.bak/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# pyenv
+.python-version
+
+# Environments
+.env
+.env.local
+.env.*.local
+
+# ============================================================
+# NODE.JS / JAVASCRIPT
+# ============================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+.npm
+.yarn-integrity
+
+# ============================================================
+# DOCKER
+# ============================================================
+*.dockerfile
+docker-compose.override.yml
+.dockerignore
+
+# ============================================================
+# IDE / ÉDITEURS
+# ============================================================
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ============================================================
+# OS
+# ============================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+.directory
+.Trash-*
+
+# ============================================================
+# SECRETS / CREDENTIALS
+# ============================================================
+*.secret
+*.key
+*.pem
+*.crt
+*.p12
+credentials*.json
+azure-credentials.json
+service-account*.json
+*.env.production
+.env.production.local
+secrets.yaml
+secrets.yml
+
+# ============================================================
+# AZURE
+# ============================================================
+.azure/
+azds.yaml
+charts/
+
+# ============================================================
+# IMAGES / VISUALISATIONS GÉNÉRÉES
+# ============================================================
+confusion_matrix.png
+feature_importance.png
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+
+# Exceptions (garder les images de documentation)
+!docs/**/*.png
+!docs/**/*.jpg
+!README_files/*.png
+
+# ============================================================
+# TEMPORAIRES
+# ============================================================
+*.tmp
+*.temp
+*.bak
+*.cache
+.cache/
+
+# ============================================================
+# MLFLOW
+# ============================================================
+mlruns/
+mlartifacts/
+
+# ============================================================
+# DVC (Data Version Control)
+# ============================================================
+.dvc/
+*.dvc
+
+# ============================================================
+# AUTRES
+# ============================================================
+# Checkpoints
+checkpoints/
+*.ckpt
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Profiling
+*.prof
+*.lprof
