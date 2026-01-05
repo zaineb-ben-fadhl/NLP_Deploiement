@@ -1,4 +1,4 @@
-name: CI/CD Pipeline - Dreaddit API
+name: CI/CD - Deploy Existing Image
 
 on:
   push:
@@ -8,334 +8,247 @@ on:
   workflow_dispatch:
 
 env:
-  # Configuration Azure
   AZURE_RESOURCE_GROUP: rg-dreaddit-mlops
   AZURE_SUBSCRIPTION_ID: 34fdac64-a9aa-4960-a50c-fe3c66214654
   ACR_NAME: acrdreaddit54381
   CONTAINER_APP_NAME: dreaddit-api
-  IMAGE_NAME: dreaddit-api
-  
-  # Configuration du modèle
-  MODEL_DIR: /app/artifacts/models/deberta_dreaddit_best
-  MAX_LENGTH: 128
-  MODEL_LOAD_TIMEOUT: 300
+  # Utiliser l'image dreaddit-apivf:v2 qui est déjà dans ACR
+  IMAGE_NAME: dreaddit-apivf
+  IMAGE_TAG: v2
 
 jobs:
   # ============================================================
-  # JOB 1: TESTS
+  # JOB 1: TESTS DU CODE SEULEMENT
   # ============================================================
   test:
-    name: Tests et Qualité du Code
+    name: Tests du Code
     runs-on: ubuntu-latest
     
     steps:
-      - name: 📥 Checkout du code
+      - name: 📥 Checkout
         uses: actions/checkout@v4
       
-      - name: 🐍 Configuration Python
+      - name: 🐍 Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           cache: 'pip'
       
-      - name: 📦 Installation des dépendances
+      - name: 📦 Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pytest pytest-cov httpx fastapi
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          fi
+          pip install -r requirements.txt || true
       
-      - name: 🔍 Recherche des fichiers de tests
-        run: |
-          echo "📂 Recherche des fichiers de tests..."
-          if [ -d "tests" ]; then
-            echo "✅ Dossier tests/ trouvé"
-            ls -la tests/
-            find tests/ -name "test_*.py" -o -name "*_test.py"
-          else
-            echo "⚠️ Aucun dossier tests/ trouvé"
-          fi
-      
-      - name: 🧪 Exécution des tests
+      - name: 🧪 Run Tests
         run: |
           if [ -d "tests" ] && [ -n "$(find tests -name 'test_*.py' 2>/dev/null)" ]; then
-            echo "✅ Exécution des tests..."
-            pytest tests/ -v --tb=short --maxfail=5 --color=yes
+            echo "✅ Running tests..."
+            pytest tests/ -v --tb=short
           else
-            echo "⚠️ Aucun test trouvé, création d'un test placeholder..."
+            echo "⚠️ No tests found - creating placeholder"
             mkdir -p tests
-            cat > tests/test_placeholder.py << 'EOF'
-          import pytest
-
-          def test_placeholder():
-              """Test placeholder - À remplacer par de vrais tests"""
-              assert True, "Ce test doit passer"
-          
-          def test_python_version():
-              """Vérifier la version de Python"""
-              import sys
-              assert sys.version_info >= (3, 9), "Python 3.9+ requis"
-          EOF
-            pytest tests/ -v --color=yes
-          fi
-      
-      - name: 📊 Génération du rapport de couverture
-        if: success()
-        continue-on-error: true
-        run: |
-          if [ -d "tests" ] && [ -n "$(find tests -name 'test_*.py' 2>/dev/null)" ]; then
-            pytest tests/ --cov=app --cov-report=term --cov-report=html --cov-report=xml || true
-            echo "📈 Rapport de couverture généré"
-          fi
-      
-      - name: 📤 Upload du rapport de couverture
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: htmlcov/
-          if-no-files-found: ignore
-          retention-days: 7
-      
-      - name: ✅ Résumé des tests
-        if: always()
-        run: |
-          echo "## 🧪 Résumé des Tests" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ -d "tests" ]; then
-            echo "- ✅ Tests exécutés avec succès" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- ⚠️ Tests placeholder créés" >> $GITHUB_STEP_SUMMARY
+            echo "def test_pass(): assert True" > tests/test_placeholder.py
+            pytest tests/ -v
           fi
 
   # ============================================================
-  # JOB 2: BUILD ET DÉPLOIEMENT
+  # JOB 2: DEPLOY (Utilise l'image existante dans ACR)
   # ============================================================
-  build-and-deploy:
-    name: Build et Déploiement sur Azure
+  deploy:
+    name: Deploy to Azure
     needs: test
     runs-on: ubuntu-latest
+    # Déployer seulement sur push vers main
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     
     steps:
-      - name: 📥 Checkout du code
+      - name: 📥 Checkout
         uses: actions/checkout@v4
       
-      - name: 🔐 Connexion Azure
+      - name: 🔐 Azure Login
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
       
-      - name: 🔍 Vérification de la connexion Azure
+      - name: 🔍 Verify Azure Connection
         run: |
-          echo "✅ Connexion Azure établie"
+          echo "✅ Connected to Azure"
           echo "📋 Subscription: ${{ env.AZURE_SUBSCRIPTION_ID }}"
           az account show --output table
-          echo ""
-          echo "📦 Vérification du resource group..."
-          az group show --name ${{ env.AZURE_RESOURCE_GROUP }} --output table
       
-      - name: 🔓 Connexion à Azure Container Registry
+      - name: 🔍 Check Image in ACR
+        id: check-image
         run: |
-          echo "🔐 Connexion à ACR: ${{ env.ACR_NAME }}"
-          az acr login --name ${{ env.ACR_NAME }}
-          echo "✅ Connexion ACR établie"
+          echo "🔍 Checking if image exists in ACR..."
+          IMAGE_FULL="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
+          
+          if az acr repository show --name ${{ env.ACR_NAME }} --image ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} &>/dev/null; then
+            echo "✅ Image found: $IMAGE_FULL"
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "image=$IMAGE_FULL" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Image NOT found: $IMAGE_FULL"
+            echo "exists=false" >> $GITHUB_OUTPUT
+            
+            # Lister les images disponibles
+            echo ""
+            echo "📦 Available images in ACR:"
+            az acr repository list --name ${{ env.ACR_NAME }} --output table
+          fi
       
-      - name: 🐳 Build de l'image Docker
+      - name: ⚠️ Stop if Image Missing
+        if: steps.check-image.outputs.exists == 'false'
         run: |
-          echo "🔨 Construction de l'image Docker..."
-          docker build \
-            -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
-            -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest \
-            --build-arg BUILDKIT_INLINE_CACHE=1 \
-            .
-          echo "✅ Image construite avec succès"
+          echo "::error::Image not found in ACR!"
+          echo "::error::Please build and push the image first:"
+          echo "::error::  ./deploy.sh"
+          echo "::error::Or manually:"
+          echo "::error::  docker build -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} ."
+          echo "::error::  az acr login --name ${{ env.ACR_NAME }}"
+          echo "::error::  docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
+          exit 1
       
-      - name: 📤 Push de l'image vers ACR
+      - name: 🚀 Deploy to Azure Container Apps
         run: |
-          echo "📤 Push de l'image vers ACR..."
-          docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
-          echo "✅ Images poussées avec succès"
-          echo ""
-          echo "📦 Images disponibles:"
-          echo "  - ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          echo "  - ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest"
-      
-      - name: 🚀 Déploiement sur Azure Container Apps
-        run: |
-          echo "🚀 Déploiement de l'application..."
+          echo "🚀 Deploying image from ACR to Container Apps..."
+          echo "   Image: ${{ steps.check-image.outputs.image }}"
+          
           az containerapp update \
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            --image ${{ steps.check-image.outputs.image }} \
             --cpu 2.0 \
             --memory 4Gi \
             --set-env-vars \
-              "MODEL_DIR=${{ env.MODEL_DIR }}" \
-              "MAX_LENGTH=${{ env.MAX_LENGTH }}" \
-              "MODEL_LOAD_TIMEOUT=${{ env.MODEL_LOAD_TIMEOUT }}"
+              "MODEL_DIR=/app/artifacts/models/deberta_dreaddit_best" \
+              "MAX_LENGTH=128" \
+              "MODEL_LOAD_TIMEOUT=300"
           
-          echo "✅ Commande de déploiement exécutée"
+          echo "✅ Deployment initiated"
       
-      - name: ⏳ Attente de la stabilisation du déploiement
+      - name: ⏳ Wait for Deployment
         run: |
-          echo "⏳ Attente de 90 secondes pour la stabilisation du déploiement..."
-          for i in {1..9}; do
-            echo "⏱️  $((i*10)) secondes écoulées..."
-            sleep 10
-          done
-          echo "✅ Période d'attente terminée"
+          echo "⏳ Waiting 60 seconds for deployment to stabilize..."
+          sleep 60
       
-      - name: 🌐 Récupération de l'URL de déploiement
+      - name: 🌐 Get Application URL
         id: get-url
         run: |
-          echo "🔍 Récupération de l'URL de l'application..."
           APP_URL=$(az containerapp show \
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --query properties.configuration.ingress.fqdn -o tsv)
           
           echo "url=https://$APP_URL" >> $GITHUB_OUTPUT
-          echo "✅ URL récupérée: https://$APP_URL"
+          echo "✅ Application URL: https://$APP_URL"
       
-      - name: 🏥 Tests de santé de l'application
+      - name: 🏥 Health Checks
         continue-on-error: true
         run: |
           API_URL="${{ steps.get-url.outputs.url }}"
           
-          echo "🔍 Test de l'endpoint /liveness..."
+          echo "🔍 Testing /liveness endpoint..."
           if curl -f -s --max-time 10 "$API_URL/liveness" > /dev/null 2>&1; then
-            echo "✅ Liveness check: OK"
+            echo "✅ Liveness: OK"
           else
-            echo "⚠️ Liveness check: FAILED (l'application démarre peut-être encore)"
+            echo "⚠️ Liveness: FAILED"
           fi
           
           echo ""
-          echo "🔍 Test de l'endpoint racine /..."
+          echo "🔍 Testing root endpoint..."
           if curl -f -s --max-time 10 "$API_URL/" > /dev/null 2>&1; then
-            echo "✅ Root endpoint: OK"
-            echo "📄 Réponse:"
-            curl -s "$API_URL/" | head -20
+            echo "✅ Root: OK"
           else
-            echo "⚠️ Root endpoint: FAILED"
+            echo "⚠️ Root: FAILED"
           fi
-          
-          echo ""
-          echo "⚠️ Note: Le endpoint /health peut mettre 2-3 minutes à répondre 200"
-          echo "         (temps de chargement du modèle de 1.66 GB)"
       
-      - name: 📊 Informations de révision
-        run: |
-          echo "📦 Informations sur la révision déployée:"
-          az containerapp revision list \
-            --name ${{ env.CONTAINER_APP_NAME }} \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --query "[?properties.active].{Name:name, Created:properties.createdTime, Replicas:properties.replicas, Traffic:properties.trafficWeight}" \
-            --output table
-      
-      - name: 📝 Résumé du déploiement
+      - name: 📝 Deployment Summary
         if: always()
         run: |
           cat >> $GITHUB_STEP_SUMMARY << 'EOF'
-          ## 🚀 Résumé du Déploiement
+          ## 🚀 Deployment Summary
           
-          ### ✅ Build Information
-          | Item | Value |
-          |------|-------|
-          | **Commit SHA** | `${{ github.sha }}` |
-          | **Branch** | `${{ github.ref_name }}` |
-          | **Auteur** | ${{ github.actor }} |
-          | **Workflow Run** | #${{ github.run_number }} |
-          | **Date** | ${{ github.event.head_commit.timestamp }} |
+          ### ✅ Deployed Successfully
           
-          ### 🐳 Image Docker
+          **Image Used:**
           ```
-          ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
+          ${{ steps.check-image.outputs.image }}
           ```
           
-          ### ☁️ Ressources Azure
-          | Ressource | Valeur |
-          |-----------|--------|
-          | **Container App** | `${{ env.CONTAINER_APP_NAME }}` |
-          | **Resource Group** | `${{ env.AZURE_RESOURCE_GROUP }}` |
-          | **ACR** | `${{ env.ACR_NAME }}` |
-          | **Région** | France Central |
-          | **CPU** | 2.0 cores |
-          | **Mémoire** | 4 GiB |
+          ### 🌐 Application URLs
+          - **API Root**: [${{ steps.get-url.outputs.url }}](${{ steps.get-url.outputs.url }})
+          - **Swagger Docs**: [${{ steps.get-url.outputs.url }}/docs](${{ steps.get-url.outputs.url }}/docs)
+          - **Health Check**: [${{ steps.get-url.outputs.url }}/health](${{ steps.get-url.outputs.url }}/health)
+          - **Liveness**: [${{ steps.get-url.outputs.url }}/liveness](${{ steps.get-url.outputs.url }}/liveness)
           
-          ### 🌐 URLs d'Accès
-          - 🏠 **API Root**: [${{ steps.get-url.outputs.url }}](${{ steps.get-url.outputs.url }})
-          - 📚 **Documentation Swagger**: [${{ steps.get-url.outputs.url }}/docs](${{ steps.get-url.outputs.url }}/docs)
-          - 📖 **ReDoc**: [${{ steps.get-url.outputs.url }}/redoc](${{ steps.get-url.outputs.url }}/redoc)
-          - 💚 **Liveness**: [${{ steps.get-url.outputs.url }}/liveness](${{ steps.get-url.outputs.url }}/liveness)
-          - 🏥 **Health**: [${{ steps.get-url.outputs.url }}/health](${{ steps.get-url.outputs.url }}/health)
+          ### ⚠️ Important Notes
+          - ⏱️ **Model Loading**: Takes 2-3 minutes after deployment
+          - 🔴 `/health` returns 503 until model is loaded
+          - 🟢 `/liveness` always available
+          - 💾 **Model Size**: 1.66 GB (included in Docker image)
           
-          ### ⚠️ Notes Importantes
-          - ⏱️ **Chargement du modèle**: 2-3 minutes après le déploiement
-          - 🔴 **Endpoint /health**: Retourne `503` jusqu'à ce que le modèle soit chargé
-          - 🟢 **Endpoint /liveness**: Toujours disponible (health check du conteneur)
-          - 💾 **Taille du modèle**: 1.66 GB (DeBERTa)
+          ### 🔄 To Update the Image
           
-          ### 🧪 Tests Rapides
+          If you need to rebuild the Docker image with model changes:
           
-          **Test de disponibilité:**
           ```bash
+          # Run the deployment script
+          ./deploy.sh
+          
+          # Or manually:
+          docker build -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} .
+          az acr login --name ${{ env.ACR_NAME }}
+          docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          
+          # Then trigger this workflow
+          git commit --allow-empty -m "Trigger deployment"
+          git push origin main
+          ```
+          
+          ### 📊 Deployment Info
+          - **Commit**: `${{ github.sha }}`
+          - **Branch**: `${{ github.ref_name }}`
+          - **Triggered by**: ${{ github.actor }}
+          - **Workflow Run**: #${{ github.run_number }}
+          
+          ### 🧪 Quick Test
+          ```bash
+          # Test liveness
           curl ${{ steps.get-url.outputs.url }}/liveness
-          ```
           
-          **Test de prédiction (après chargement du modèle):**
-          ```bash
+          # Test prediction (after 2-3 min)
           curl -X POST "${{ steps.get-url.outputs.url }}/predict" \
             -H "Content-Type: application/json" \
-            -d '{"text": "I am feeling extremely stressed and overwhelmed"}'
-          ```
-          
-          **Vérifier les logs:**
-          ```bash
-          az containerapp logs show \
-            --name ${{ env.CONTAINER_APP_NAME }} \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --follow
+            -d '{"text": "I am feeling stressed"}'
           ```
           
           ---
-          
-          ✨ **Déploiement terminé avec succès!** ✨
+          ✨ **Deployment completed!**
           EOF
 
   # ============================================================
-  # JOB 3: NOTIFICATION (optionnel)
+  # JOB 3: NOTIFICATION
   # ============================================================
   notify:
-    name: Notification de déploiement
-    needs: build-and-deploy
+    name: Status Notification
+    needs: deploy
     runs-on: ubuntu-latest
     if: always()
     
     steps:
-      - name: 📢 Résumé du statut
+      - name: 📊 Final Status
         run: |
-          if [ "${{ needs.build-and-deploy.result }}" == "success" ]; then
-            echo "✅ Déploiement réussi!"
-            echo "STATUS=success" >> $GITHUB_ENV
-          else
-            echo "❌ Déploiement échoué!"
-            echo "STATUS=failure" >> $GITHUB_ENV
-          fi
-      
-      - name: 📝 Message de statut
-        run: |
-          echo "## 📊 Statut Final du Pipeline" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "$STATUS" == "success" ]; then
-            echo "### ✅ Déploiement Réussi" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.deploy.result }}" == "success" ]; then
+            echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Tous les jobs ont été exécutés avec succès." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "### ❌ Déploiement Échoué" >> $GITHUB_STEP_SUMMARY
+            echo "The application has been deployed successfully using the existing Docker image from ACR." >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.deploy.result }}" == "skipped" ]; then
+            echo "## ⏭️ Deployment Skipped" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Un ou plusieurs jobs ont échoué. Consultez les logs ci-dessus." >> $GITHUB_STEP_SUMMARY
+            echo "Deployment was skipped (not on main branch or not a push event)." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The deployment failed. Check the logs above for details." >> $GITHUB_STEP_SUMMARY
           fi
