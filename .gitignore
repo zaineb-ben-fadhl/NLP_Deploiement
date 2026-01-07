@@ -29,6 +29,7 @@ merges.txt
 # DONNÉES
 # ============================================================
 data/
+deberta_dreaddit_best/
 datasets/
 *.csv
 *.tsv

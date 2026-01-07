@@ -34,7 +34,7 @@ uvicorn[standard]==0.27.1
 # ===============================
 
 opencensus==0.11.4
-opencensus-ext-azure==1.1.13
+
 
 # ===============================
 # Utils
@@ -49,3 +49,6 @@ safetensors==0.4.5
 pytest==7.4.3
 pytest-cov==4.1.0
 httpx==0.25.2
+opencensus-ext-azure==1.1.9
+opencensus-ext-requests==0.8.0
+

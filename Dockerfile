@@ -29,6 +29,9 @@ RUN pip install --upgrade pip \
 
 # Copier l'application
 COPY app/ ./app/
+# Copier les CSV (si tu as des fichiers initiaux)
+COPY data/ ./data/
+
 
 # Copier le modèle et vérifier son contenu
 COPY artifacts/models/deberta_dreaddit_best/ ./artifacts/models/deberta_dreaddit_best/
