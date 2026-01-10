@@ -1,40 +1,23 @@
 # ===============================
-# Core NLP / Deep Learning (CPU)
+# Streamlit App (Lightweight)
 # ===============================
 
-torch==2.1.2
-transformers==4.37.2
-datasets==2.16.1
-accelerate==0.27.2
+streamlit
 
 # ===============================
-# MLOps / Tracking
-# ===============================
-
-mlflow==2.10.0
-
-# ===============================
-# Data / Scientific stack
-# ===============================
-
-numpy==1.26.4
-pandas==2.1.4
-scikit-learn==1.4.0
-pyarrow==14.0.2
-
-# ===============================
-# API / Serving
+# API / Backend (if used)
 # ===============================
 
 fastapi==0.110.0
 uvicorn[standard]==0.27.1
 
 # ===============================
-# Monitoring / Logs (Azure)
+# Data
 # ===============================
 
-opencensus==0.11.4
-
+numpy==1.26.4
+pandas==2.1.4
+scikit-learn==1.4.0
 
 # ===============================
 # Utils
@@ -42,13 +25,12 @@ opencensus==0.11.4
 
 tqdm==4.66.1
 typing-extensions==4.9.0
-sentencepiece==0.2.0
 safetensors==0.4.5
 
-# Test dependencies
+# ===============================
+# HTTP / Tests (optional)
+# ===============================
+
+httpx==0.25.2
 pytest==7.4.3
 pytest-cov==4.1.0
-httpx==0.25.2
-opencensus-ext-azure==1.1.9
-opencensus-ext-requests==0.8.0
-pymongo
