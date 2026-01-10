@@ -5,7 +5,8 @@ artifacts/models/
 artifacts/metrics/
 artifacts/plots/
 artifacts/reports/
-
+artifacts
+deberta_dreaddit_best
 # Fichiers de modèles
 *.bin
 *.safetensors
