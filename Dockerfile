@@ -1,16 +1,15 @@
 # =========================
-# Dockerfile CPU - Dreaddit DeBERTa + FastAPI
+# Dockerfile CPU - Streamlit App (Whisper / NLP)
 # =========================
 
 FROM python:3.10-slim
 
-# Variables Python et timeouts
+# Variables d'environnement
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     MODEL_DIR=/app/artifacts/models/deberta_dreaddit_best \
-    MAX_LENGTH=128 \
-    MODEL_LOAD_TIMEOUT=180
+    MAX_LENGTH=128
 
 WORKDIR /app
 
@@ -29,21 +28,15 @@ RUN pip install --upgrade pip \
 
 # Copier l'application
 COPY app/ ./app/
-# Copier les CSV (si tu as des fichiers initiaux)
+# Copier les données (si existantes)
 COPY data/ ./data/
 
-
-# Copier le modèle et vérifier son contenu
+# Copier le modèle
 COPY artifacts/models/deberta_dreaddit_best/ ./artifacts/models/deberta_dreaddit_best/
 RUN echo "Model files:" && ls -lah ./artifacts/models/deberta_dreaddit_best/
 
-# Exposer le port FastAPI
-EXPOSE 8000
+# Exposer le port utilisé par Hugging Face
+EXPOSE 7860
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=240s --retries=3 \
-  CMD curl -f http://localhost:8000/liveness || exit 1
-
-# Démarrage avec timeouts augmentés
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
-     "--timeout-keep-alive", "300", "--timeout-graceful-shutdown", "30"]
+# Lancer Streamlit
+CMD ["streamlit", "run", "app/app_streamlit.py", "--server.port=7860", "--server.address=0.0.0.0"]
