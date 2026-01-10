@@ -30,16 +30,14 @@ import mlflow
 import matplotlib.pyplot as plt
 
 
-# -----------------------------
-# 0) MLflow config (workshop-style)
-# -----------------------------
+#  MLflow config 
+
 mlflow.set_tracking_uri("./mlruns")
 mlflow.set_experiment("dreaddit-deberta-prediction")
 
 
-# -----------------------------
-# 1) Paths (MLOps-friendly)
-# -----------------------------
+#  Paths mlops
+
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "."))
 
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
@@ -68,9 +66,7 @@ def ensure_dirs():
     os.makedirs(LOGS_DIR, exist_ok=True)
 
 
-# -----------------------------
-# 2) Config (same logic as yours)
-# -----------------------------
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 
@@ -85,30 +81,25 @@ EVAL_BATCH_SIZE = 8
 AUGMENT_RATIO = 0.25
 RANDOM_STATE = 42
 MAX_LENGTH = 128
-
 MODEL_SAVE_DIR = os.path.join(MODELS_DIR, "deberta_dreaddit_best")
 METRICS_JSON_PATH = os.path.join(METRICS_DIR, "final_metrics_deberta.json")
 METRICS_CSV_PATH = os.path.join(METRICS_DIR, "final_metrics_deberta.csv")
 
 
-# -----------------------------
-# 3) Dataset cache (download once)
-# -----------------------------
+
 def get_dataset_cached():
     if os.path.exists(DATASET_DIR):
-        print(f"✅ Loading cached dataset from: {DATASET_DIR}")
+        print(f" Loading cached dataset from: {DATASET_DIR}")
         return load_from_disk(DATASET_DIR)
 
-    print("⬇️ Downloading dataset: andreagasparini/dreaddit")
+    print("⬇Downloading dataset: andreagasparini/dreaddit")
     ds = load_dataset("andreagasparini/dreaddit")
-    print(f"💾 Saving dataset to disk: {DATASET_DIR}")
+    print(f"Saving dataset to disk: {DATASET_DIR}")
     ds.save_to_disk(DATASET_DIR)
     return ds
 
 
-# -----------------------------
-# 4) Data prep (same logic)
-# -----------------------------
+
 def load_and_prepare_data(random_state=42):
     ds = get_dataset_cached()
     df_all = pd.concat(
@@ -162,10 +153,8 @@ def augment_train_df(train_df, augment_ratio=0.25, random_state=42):
     print("Train après augmentation:", len(train_aug))
     return train_aug
 
+#  Torch dataset
 
-# -----------------------------
-# 5) Torch dataset
-# -----------------------------
 class StressDataset(torch.utils.data.Dataset):
     def __init__(self, encodings, labels):
         self.encodings = encodings
@@ -189,10 +178,7 @@ def build_dataset(tokenizer, df):
     )
     return StressDataset(enc, df["label"].tolist())
 
-
-# -----------------------------
-# 6) Metrics (same as yours)
-# -----------------------------
+# Metrics 
 def compute_metrics(eval_pred):
     logits, labels = eval_pred
     preds = np.argmax(logits, axis=-1)
@@ -203,10 +189,8 @@ def compute_metrics(eval_pred):
         "recall": recall_score(labels, preds),
     }
 
-
-# -----------------------------
 # 7) Model init (dropout=0.2)
-# -----------------------------
+
 def model_init():
     config = AutoConfig.from_pretrained(MODEL_NAME, num_labels=2)
 
@@ -253,7 +237,6 @@ def main():
         train_df, augment_ratio=AUGMENT_RATIO, random_state=RANDOM_STATE
     )
 
-    # ✅ FIX IMPORTANT: avoid DeBERTa fast-tokenizer conversion bug
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=False)
 
     train_dataset = build_dataset(tokenizer, train_df)
